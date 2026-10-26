@@ -2,7 +2,7 @@
 # Multi-stage build: compile with dev deps, ship only production deps + JS on a slim,
 # non-root image. The same image runs the API, the worker and migrations.
 
-FROM node:20.18-bookworm-slim AS deps
+FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
@@ -12,11 +12,16 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
-FROM node:20.18-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     NODE_OPTIONS="--enable-source-maps --max-old-space-size=384"
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/* \
+# Apply Debian security updates, and drop npm/corepack: the runtime only ever runs `node`,
+# and the package managers' bundled dependencies are the main source of image CVEs.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+              /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
     && mkdir -p /app/storage && chown node:node /app/storage
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist

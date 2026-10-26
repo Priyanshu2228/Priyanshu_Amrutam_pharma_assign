@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run lint
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npx vitest run --coverage --project integration --project unit
@@ -72,25 +72,24 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       # Fail the build on high/critical advisories in production dependencies.
       - run: npm audit --omit=dev --audit-level=high
-      - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Scanners run from pinned images rather than marketplace actions: same binary as
+      # local runs, no licence or tag-resolution surprises.
+      - name: Secret scan (full history)
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 detect --source=/repo --redact --no-banner
       - name: Terraform static analysis
-        uses: aquasecurity/trivy-action@0.29.0
-        with:
-          scan-type: config
-          scan-ref: infra/terraform
-          severity: HIGH,CRITICAL
-          exit-code: '1'
+        run: >-
+          docker run --rm -v "$PWD:/src" aquasec/trivy:0.58.1 config --quiet --exit-code 1
+          --severity HIGH,CRITICAL --ignorefile /src/.trivyignore /src/infra/terraform
 
   codeql:
     name: CodeQL (SAST)
+    # Code scanning on private repositories requires GitHub Advanced Security.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -120,12 +119,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.29.0
-        with:
-          image-ref: amrutam-api:${{ github.sha }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
+        run: >-
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.1 image
+          --quiet --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed amrutam-api:${{ github.sha }}
       - name: Push to GHCR
         if: github.ref == 'refs/heads/main'
         run: |

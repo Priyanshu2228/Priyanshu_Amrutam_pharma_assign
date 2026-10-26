@@ -159,12 +159,45 @@ resource "aws_security_group" "app" {
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # Egress is declared as standalone rules below: inline rules referencing the db/redis
+  # groups would create a dependency cycle (those groups reference this one).
+}
+
+# HTTPS out via NAT: payment provider (no fixed IP range) and AWS APIs. Nothing else.
+resource "aws_vpc_security_group_egress_rule" "app_https" {
+  security_group_id = aws_security_group.app.id
+  description       = "HTTPS to payment provider and AWS APIs"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_postgres" {
+  security_group_id            = aws_security_group.app.id
+  description                  = "PostgreSQL"
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+  referenced_security_group_id = aws_security_group.db.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_redis" {
+  security_group_id            = aws_security_group.app.id
+  description                  = "Redis"
+  ip_protocol                  = "tcp"
+  from_port                    = 6379
+  to_port                      = 6379
+  referenced_security_group_id = aws_security_group.redis.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_dns" {
+  security_group_id = aws_security_group.app.id
+  description       = "VPC DNS resolver"
+  ip_protocol       = "udp"
+  from_port         = 53
+  to_port           = 53
+  cidr_ipv4         = var.vpc_cidr
 }
 
 resource "aws_security_group" "db" {

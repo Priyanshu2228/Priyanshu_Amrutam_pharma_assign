@@ -1,0 +1,10 @@
+# Accepted IaC findings. Each entry needs a justification; review quarterly.
+
+# Public ALB: this is the internet-facing API by design. Fronted by AWS WAF (managed rule
+# sets + per-IP rate rule), TLS 1.3 listener only, invalid headers dropped.
+AVD-AWS-0053
+
+# App task egress to 0.0.0.0/0 is limited to tcp/443 (payment provider has no fixed IP
+# range; AWS APIs via NAT). All other egress is pinned to the DB/Redis security groups
+# and the VPC resolver.
+AVD-AWS-0104

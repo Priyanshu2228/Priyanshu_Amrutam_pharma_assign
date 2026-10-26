@@ -22,9 +22,11 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }} # production requires a manual approval
-    env:
-      IMAGE: ghcr.io/${{ github.repository }}/api:${{ inputs.image_sha }}
     steps:
+      - name: Resolve image reference
+        # OCI image names must be lowercase; the owner/repo name is not.
+        run: |
+          echo "IMAGE=$(echo "ghcr.io/${{ github.repository }}/api" | tr '[:upper:]' '[:lower:]'):${{ inputs.image_sha }}" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:

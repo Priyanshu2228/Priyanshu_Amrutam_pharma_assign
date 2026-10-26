@@ -126,6 +126,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          IMAGE=ghcr.io/${{ github.repository }}/api
+          # OCI image names must be lowercase; the owner/repo name is not.
+          IMAGE=$(echo "ghcr.io/${{ github.repository }}/api" | tr '[:upper:]' '[:lower:]')
           docker tag amrutam-api:${{ github.sha }} $IMAGE:${{ github.sha }}
           docker push $IMAGE:${{ github.sha }}

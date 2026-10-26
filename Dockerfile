@@ -2,7 +2,7 @@
 # Multi-stage build: compile with dev deps, ship only production deps + JS on a slim,
 # non-root image. The same image runs the API, the worker and migrations.
 
-FROM node:20.18-bookworm-slim AS deps
+FROM node:26.12-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
@@ -12,7 +12,7 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
-FROM node:20.18-bookworm-slim AS runtime
+FROM node:26.12-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     NODE_OPTIONS="--enable-source-maps --max-old-space-size=384"
 WORKDIR /app

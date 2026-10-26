@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, typecheck, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run test:unit
+
+  integration:
+    name: Integration tests (PostgreSQL + Redis)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.6-alpine
+        env:
+          POSTGRES_USER: amrutam
+          POSTGRES_PASSWORD: amrutam
+          POSTGRES_DB: amrutam_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U amrutam" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://amrutam:amrutam@localhost:5432/amrutam_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --coverage --project integration --project unit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/lcov.info
+
+  security:
+    name: Dependency, secret and IaC scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Fail the build on high/critical advisories in production dependencies.
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Terraform static analysis
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: config
+          scan-ref: infra/terraform
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  codeql:
+    name: CodeQL (SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+
+  image:
+    name: Build, scan and publish image
+    needs: [quality, integration, security]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: amrutam-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: amrutam-api:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Push to GHCR
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          IMAGE=ghcr.io/${{ github.repository }}/api
+          docker tag amrutam-api:${{ github.sha }} $IMAGE:${{ github.sha }}
+          docker push $IMAGE:${{ github.sha }}

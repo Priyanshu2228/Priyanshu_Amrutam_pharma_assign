@@ -1,0 +1,70 @@
+# SLO-driven alerts. Targets: 99.95% availability, p95 < 200ms reads, p95 < 500ms writes.
+groups:
+  - name: amrutam-slo
+    rules:
+      - record: job:http_requests:rate5m
+        expr: sum by (job) (rate(http_request_duration_seconds_count[5m]))
+      - record: job:http_errors:rate5m
+        expr: sum by (job) (rate(http_request_duration_seconds_count{status_code=~"5.."}[5m]))
+
+      # Multi-window burn rate (Google SRE workbook): 14.4x burn over 1h pages.
+      - alert: ErrorBudgetBurnFast
+        expr: |
+          (sum(rate(http_request_duration_seconds_count{status_code=~"5.."}[1h])) / sum(rate(http_request_duration_seconds_count[1h]))) > (14.4 * 0.0005)
+          and
+          (sum(rate(http_request_duration_seconds_count{status_code=~"5.."}[5m])) / sum(rate(http_request_duration_seconds_count[5m]))) > (14.4 * 0.0005)
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: 5xx rate is burning the 99.95% error budget ~14x too fast
+
+      - alert: ReadLatencyP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{method="GET"}[5m]))) > 0.2
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: p95 read latency above 200ms SLO
+
+      - alert: WriteLatencyP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{method=~"POST|PATCH|PUT|DELETE", route!~".*auth.*"}[5m]))) > 0.5
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: p95 write latency above 500ms SLO
+
+      - alert: BookingConflictSpike
+        expr: sum(rate(booking_attempts_total{outcome="conflict"}[10m])) / sum(rate(booking_attempts_total[10m])) > 0.3
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: Over 30% of bookings hit taken slots (possible bot/hoarding or cache staleness)
+
+      - alert: PaymentProviderFailing
+        expr: sum(rate(external_calls_total{provider!="", outcome="failure"}[5m])) > 0.1
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: Payment provider calls are failing; bookings are being compensated
+
+      - alert: OutboxBacklog
+        expr: max(outbox_unpublished_events) > 1000
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: Outbox relay is behind; notifications/refunds/PDFs are delayed
+
+      - alert: JobFailures
+        expr: sum by (queue) (rate(job_duration_seconds_count{status="failure"}[15m])) > 0.05
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: Background jobs failing in {{ $labels.queue }} (check the dead-letter set)
+
+      - alert: InstanceDown
+        expr: up == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: '{{ $labels.job }} target {{ $labels.instance }} is down'

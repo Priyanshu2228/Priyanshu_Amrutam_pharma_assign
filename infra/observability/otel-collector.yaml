@@ -1,0 +1,40 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  # Keep every error and slow trace, sample the rest; protects storage at 100k consults/day.
+  tail_sampling:
+    decision_wait: 5s
+    policies:
+      - name: errors
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+      - name: slow
+        type: latency
+        latency: { threshold_ms: 500 }
+      - name: baseline
+        type: probabilistic
+        probabilistic: { sampling_percentage: 10 }
+  # Defence in depth: strip anything that looks like a credential from span attributes.
+  attributes/scrub:
+    actions:
+      - key: http.request.header.authorization
+        action: delete
+      - key: db.statement
+        action: hash
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls: { insecure: true }
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [attributes/scrub, tail_sampling, batch]
+      exporters: [otlp/jaeger]

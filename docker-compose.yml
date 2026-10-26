@@ -1,0 +1,117 @@
+# Local stack: API + worker + PostgreSQL + Redis + full observability
+# (Prometheus, Grafana, OpenTelemetry Collector, Jaeger).
+#
+#   docker compose up -d --build          # everything
+#   docker compose up -d postgres redis   # just the data stores, for `npm run dev` / tests
+
+x-app-env: &app-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  DATABASE_URL: postgres://amrutam:amrutam@postgres:5432/amrutam
+  REDIS_URL: redis://redis:6379
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local-dev-access-secret-local-dev-access-secret}
+  FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:-k1:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+  AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:-local-dev-audit-hmac-key-local-dev-audit-hmac}
+  PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-local-dev-webhook-secret}
+  MFA_REQUIRED_ROLES: doctor,admin
+  CORS_ORIGINS: http://localhost:5173
+  OTEL_ENABLED: 'true'
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  DOCUMENT_STORAGE_DIR: /app/storage
+
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_USER: amrutam
+      POSTGRES_PASSWORD: amrutam
+      POSTGRES_DB: amrutam
+    ports: ['${POSTGRES_PORT:-5432}:5432']
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command:
+      [
+        'postgres',
+        '-c',
+        'shared_preload_libraries=pg_stat_statements',
+        '-c',
+        'log_min_duration_statement=200',
+      ]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U amrutam']
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    command: ['node', 'dist/db/migrate.js']
+    environment: *app-env
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    build: .
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: amrutam-api
+    ports: ['3000:3000']
+    volumes: ['storage:/app/storage']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    build: .
+    command: ['node', 'dist/worker.js']
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: amrutam-worker
+      HEALTH_PORT: '9464'
+    volumes: ['storage:/app/storage']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes: ['./infra/observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro']
+    ports: ['4318:4318']
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.64.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    ports: ['16686:16686']
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ['9090:9090']
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ['3001:3000']
+    depends_on: [prometheus]
+
+volumes:
+  pgdata:
+  storage:

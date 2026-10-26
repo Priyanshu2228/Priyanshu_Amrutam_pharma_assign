@@ -1,6 +1,6 @@
 # Amrutam Telemedicine Backend
 
-Production-grade backend for Amrutam's telemedicine platform. It is built with Node.js 20, TypeScript, Express 5, PostgreSQL 16, Redis 7 and BullMQ.
+Production-grade backend for Amrutam's telemedicine platform. It is built with Node.js 22 LTS, TypeScript, Express 5, PostgreSQL 16, Redis 7 and BullMQ.
 
 It covers:
 
@@ -12,16 +12,21 @@ It covers:
 - a tamper-evident audit trail;
 - admin analytics.
 
-| Doc                                          | Contents                                                                                                                          |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| [docs/architecture.md](docs/architecture.md) | Architecture, data flow, booking sequence, ER diagram, retries, partitioning, caching and concurrency, sagas, backup/DR, capacity |
-| [docs/security.md](docs/security.md)         | Data classification, attack surface, STRIDE threat model, OWASP mapping, key rotation, audit, checklist                           |
-| [openapi/openapi.yaml](openapi/openapi.yaml) | OpenAPI 3.1 contract (Swagger UI at `/docs` outside production)                                                                   |
-| [docs/demo-script.md](docs/demo-script.md)   | 5-minute demo walkthrough with copy-paste requests                                                                                |
+## Deliverables
+
+| Deliverable                         | Where                                                                                                                                                                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Code and infrastructure as code     | [src/](src), [migrations/](migrations), [infra/terraform/](infra/terraform), [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml)                                                                                            |
+| README with setup                   | This file                                                                                                                                                                                                                                  |
+| API schema                          | [openapi/openapi.yaml](openapi/openapi.yaml) (OpenAPI 3.1; Swagger UI at `/docs` outside production)                                                                                                                                       |
+| Architecture doc                    | [docs/architecture.md](docs/architecture.md): architecture and data flow, booking sequence diagram, ER diagram, API schema, retry and backoff, data partitioning, caching and concurrency, transactions and sagas, backup and DR, capacity |
+| Tests and CI pipeline               | [tests/](tests) (unit + integration), [.github/workflows/ci.yml](.github/workflows/ci.yml), [.github/workflows/deploy.yml](.github/workflows/deploy.yml)                                                                                   |
+| Observability setup                 | [src/telemetry/](src/telemetry), [infra/observability/](infra/observability) (Prometheus alert rules, Grafana dashboard, OpenTelemetry Collector)                                                                                          |
+| Security checklist and threat model | [docs/security.md](docs/security.md): data classification, attack surface, STRIDE threat model, OWASP mapping, encryption and key rotation, audit logging, dependency scanning                                                             |
 
 ## Quick start
 
-Prerequisites: Node 20+, and Docker (for PostgreSQL and Redis).
+Prerequisites: Node 22 LTS (20.11+ also works), and Docker (for PostgreSQL and Redis).
 
 1. Install dependencies:
 

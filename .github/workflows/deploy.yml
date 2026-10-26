@@ -25,7 +25,7 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}/api:${{ inputs.image_sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}

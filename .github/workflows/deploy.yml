@@ -27,12 +27,12 @@ jobs:
         # OCI image names must be lowercase; the owner/repo name is not.
         run: |
           echo "IMAGE=$(echo "ghcr.io/${{ github.repository }}/api" | tr '[:upper:]' '[:lower:]'):${{ inputs.image_sha }}" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ap-south-1
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
       - name: Terraform plan and apply
         working-directory: infra/terraform
         run: |
